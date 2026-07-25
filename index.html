@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zed agent panel — message editor toolbar, current vs proposed</title>
+<style>
+  :root{
+    --bg:#131315; --panel:#1a1b1e; --editor-bg:#161719;
+    --line:#2a2c31; --line-soft:#232529; --hover:#232529;
+    --text:#d6d7da; --muted:#8b8e95; --dim:#63666d;
+    --accent:#5b9dd9; --good:#5fb37a; --warn:#d9a441; --bad:#d97757;
+    --mono: ui-monospace,"SF Mono",Menlo,monospace;
+    --ui: -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:40px 32px 90px; background:var(--bg); color:var(--text);
+    font-family:var(--ui); font-size:14px; line-height:1.55; -webkit-font-smoothing:antialiased}
+  h1{font-size:19px; font-weight:600; margin:0 0 6px; letter-spacing:-.01em}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 34px; max-width:76ch}
+  h2{font-size:12.5px; font-weight:600; margin:42px 0 4px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted)}
+  .note{color:var(--dim); font-size:12.5px; margin:0 0 18px; max-width:80ch}
+  code{font-family:var(--mono); font-size:12px; background:#232529; padding:1px 5px; border-radius:4px; color:#b8bac0}
+  .row{display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap}
+
+  .shell{width:380px; flex:0 0 auto}
+  .cap{display:flex; align-items:center; gap:8px; margin-bottom:9px; font-size:12px; color:var(--muted)}
+  .tag{font-size:10.5px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; padding:2px 7px; border-radius:4px}
+  .tag.now{background:rgba(217,119,87,.14); color:var(--bad)}
+  .tag.new{background:rgba(95,179,122,.14); color:var(--good)}
+  .rows{margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--dim)}
+
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:8px}
+  .convo{padding:16px 14px; color:var(--dim); font-size:12.5px; min-height:52px; border-bottom:1px solid var(--line-soft)}
+  .editor{background:var(--editor-bg); padding:12px 12px 10px; border-radius:0 0 7px 7px}
+  .ph{font-family:var(--mono); font-size:12.5px; color:var(--dim); line-height:1.6; margin-bottom:14px}
+
+  .ctl{display:inline-flex; align-items:center; gap:5px; height:24px; padding:0 7px; border-radius:5px;
+    font-size:12.5px; color:var(--muted); white-space:nowrap; border:0; background:transparent;
+    font-family:inherit; cursor:pointer}
+  .ctl:hover{background:var(--hover)}
+  .ctl .qual{color:var(--dim)}
+  .chev{color:var(--dim); font-size:9px}
+  .icon{display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; width:24px; height:24px;
+    border-radius:5px; color:var(--muted); font-size:14px; border:0; background:transparent; font-family:inherit; cursor:pointer}
+  .icon:hover{background:var(--hover)}
+  .sw{width:30px; height:17px; border-radius:9px; background:#33363c; position:relative; flex:0 0 auto; transition:background .13s}
+  .sw::after{content:""; position:absolute; top:2.5px; left:3px; width:12px; height:12px; border-radius:50%;
+    background:#8b8e95; transition:transform .13s, background .13s}
+  .sw.on{background:rgba(91,157,217,.45)}
+  .sw.on::after{transform:translateX(12px); background:var(--accent)}
+  .send{display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; width:26px; height:24px;
+    border-radius:5px; background:#2a2c31; color:var(--muted); font-size:13px; border:0; cursor:pointer}
+  .send:hover{background:#33363c; color:var(--text)}
+
+  .meter{display:inline-flex; align-items:center; gap:5px; height:24px; padding:0 5px; border-radius:5px;
+    flex:0 0 auto; cursor:default; border:0; background:transparent; font-family:inherit}
+  .meter:hover{background:var(--hover)}
+  .meter svg{display:block; flex:0 0 auto}
+  .meter .pct{font-size:11.5px; font-variant-numeric:tabular-nums; color:var(--muted); white-space:nowrap}
+  .meter.warn .pct{color:var(--warn)} .meter.crit .pct{color:var(--bad)}
+
+  .bar-now{display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center}
+  .bar-now .brk{flex-basis:100%; height:0; margin:0}
+  .bar-now .amb{color:var(--bad); border-bottom:1px dashed rgba(217,119,87,.6)}
+
+  .bar-new{display:flex; align-items:center; gap:4px; flex-wrap:nowrap; min-width:0}
+  .fixed-left,.fixed-right{display:flex; align-items:center; gap:4px; flex:0 0 auto}
+  .zone{position:relative; flex:1 1 auto; min-width:0; height:24px}
+  .tier{position:absolute; left:0; top:0; visibility:hidden; pointer-events:none;
+    display:flex; align-items:center; gap:4px; white-space:nowrap}
+  .tier.active{position:static; visibility:visible; pointer-events:auto}
+  .chip{display:inline-flex; align-items:center; gap:6px; height:24px; padding:0 8px; border-radius:5px;
+    border:1px solid var(--line); background:#1d1f23; font-size:12.5px; color:var(--muted);
+    white-space:nowrap; cursor:pointer; font-family:inherit}
+  .chip:hover{background:var(--hover)}
+  .chip .dot{color:#4a4d53; font-size:10px}
+
+  .pop-host{position:relative}
+  .pop{position:absolute; bottom:calc(100% + 7px); left:0; z-index:40; min-width:200px; max-width:290px;
+    background:#202226; border:1px solid #34373d; border-radius:8px; padding:5px;
+    box-shadow:0 10px 28px rgba(0,0,0,.55); display:none}
+  .pop.open{display:block}
+  .pop.right{left:auto; right:0}
+  .meter-host:hover .pop.hoverpop{display:block}
+  .pop-sec{padding:6px 8px 3px; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); font-weight:600}
+  .pop-item{display:flex; align-items:flex-start; gap:8px; width:100%; padding:5px 8px; border-radius:5px;
+    font-size:12.5px; color:var(--muted); background:transparent; border:0; cursor:pointer; font-family:inherit; text-align:left}
+  .pop-item:hover{background:#2a2d33; color:var(--text)}
+  .pop-item .tick{width:12px; flex:0 0 auto; color:var(--accent); font-size:11px; line-height:1.5}
+  .pop-item.sel{color:var(--text)}
+  .pop-item .body{flex:1 1 auto; min-width:0}
+  .pop-item .desc{display:block; font-size:11px; color:var(--dim); line-height:1.4; margin-top:2px; white-space:normal}
+  .pop-item .sp{margin-left:auto; flex:0 0 auto}
+  .pop-item .star{color:var(--dim); font-size:12px}
+  .pop-item .star.on{color:var(--warn)}
+  .pop-sep{height:1px; background:#2e3137; margin:4px 6px}
+  .pop-empty{padding:9px 10px; font-size:12px; color:var(--dim)}
+  .pop-read{padding:3px 8px 7px; font-size:15px; color:var(--text); font-variant-numeric:tabular-nums}
+  .pop-read small{font-size:12px; color:var(--dim); margin-left:6px}
+
+  .legend{display:flex; gap:16px; flex-wrap:wrap; margin-top:14px; font-size:12px; color:var(--dim)}
+  .legend b{font-weight:600} .legend .x{color:var(--bad)} .legend .y{color:var(--good)}
+
+  .demo{margin-top:14px}
+  .bar-ctrls{display:flex; align-items:center; gap:22px; margin-bottom:16px; font-size:12.5px; color:var(--muted); flex-wrap:wrap}
+  input[type=range]{width:240px; accent-color:var(--accent)}
+  .val{font-family:var(--mono); font-size:12px; color:var(--text); min-width:52px; display:inline-block}
+  .state-line{margin-top:14px; font-family:var(--mono); font-size:11.5px; color:var(--dim);
+    background:#1a1b1e; border:1px solid var(--line-soft); border-radius:6px; padding:9px 11px; max-width:700px}
+  .state-line b{color:var(--muted); font-weight:600}
+  .callouts{margin:10px 0 0; padding-left:18px; color:var(--dim); font-size:12.5px; max-width:82ch}
+  .callouts li{margin:6px 0}
+  .callouts b{color:var(--muted); font-weight:600}
+</style>
+</head>
+<body>
+
+<h1>Agent panel message editor — current vs proposed</h1>
+<p class="sub">
+  The clipping bug is fixed in 1.13.0-pre. Two problems remain. The toolbar is a plain
+  <code>flex-wrap</code> with no priority order, so at 380&nbsp;px it spends five rows of chrome under a
+  one-line input. And <b>two adjacent dropdowns both read <code>Default</code></b> — one selects the model,
+  one selects the agent — with nothing in either label to say which is which.
+</p>
+
+<h2>Side by side at 380px</h2>
+<div class="row">
+
+  <div class="shell">
+    <div class="cap"><span class="tag now">current</span> v1.13.0-pre <span class="rows">5 rows</span></div>
+    <div class="panel">
+      <div class="convo">Hello! Ready when you are — what are we working on?</div>
+      <div class="editor">
+        <div class="ph">Message Claude Agent — @ to<br>include context, / for commands</div>
+        <div class="bar-now">
+          <span class="icon">+</span><span class="icon">⊕</span>
+          <span class="brk"></span>
+          <span id="ringNow"></span>
+          <span class="brk"></span>
+          <span class="ctl">Auto <span class="chev">▾</span></span>
+          <span class="ctl"><span class="amb">Default (recommended)</span> <span class="chev">▾</span></span>
+          <span class="ctl">High <span class="chev">▾</span></span>
+          <span class="brk"></span>
+          <span class="ctl">Fast mode</span><span class="sw"></span>
+          <span class="ctl"><span class="amb">Default</span> <span class="chev">▾</span></span>
+          <span class="brk"></span>
+          <span class="send">➤</span>
+        </div>
+      </div>
+    </div>
+    <div class="legend">
+      <span><b class="x">✕</b> two controls both say “Default”</span>
+      <span><b class="x">✕</b> context ring orphaned, unlabelled</span>
+      <span><b class="x">✕</b> send stranded bottom-left</span>
+    </div>
+  </div>
+
+  <div class="shell">
+    <div class="cap"><span class="tag new">proposed</span> priority + overflow <span class="rows">1 row</span></div>
+    <div class="panel">
+      <div class="convo">Hello! Ready when you are — what are we working on?</div>
+      <div class="editor">
+        <div class="ph">Message Claude Agent — @ to<br>include context, / for commands</div>
+        <div id="mountA"></div>
+      </div>
+    </div>
+    <div class="legend">
+      <span><b class="y">✓</b> ambiguous values self-qualify</span>
+      <span><b class="y">✓</b> agent ranks above model</span>
+      <span><b class="y">✓</b> meter always visible</span>
+    </div>
+  </div>
+</div>
+
+<h2>The proposed bar, resized live</h2>
+<p class="note">
+  Widths are measured, not hardcoded — the bar shows the richest control set that fits and the
+  <code>⋯</code> menu is built from whatever didn't. <b>All popovers work.</b> Try this: set <b>Model</b> to
+  <code>Opus 5</code> and watch the Agent control drop its <code>Agent:</code> prefix, because the clash with
+  <code>Default</code> is gone. Set it back and the prefix returns.
+</p>
+
+<div class="demo">
+  <div class="bar-ctrls">
+    <span><label for="w">Panel width</label>
+      <input type="range" id="w" min="300" max="700" value="380" step="2">
+      <span class="val" id="wv">380px</span>
+      <span style="color:var(--dim); font-size:11.5px">floor 300px</span></span>
+    <span><label for="c">Context used</label>
+      <input type="range" id="c" min="0" max="100" value="13" step="1" style="width:170px">
+      <span class="val" id="cv">13%</span></span>
+  </div>
+
+  <div class="shell" id="rs" style="width:380px">
+    <div class="panel">
+      <div class="convo">Hello! Ready when you are — what are we working on?</div>
+      <div class="editor">
+        <div class="ph">Message Claude Agent — @ to include context, / for commands</div>
+        <div id="mountB"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="state-line" id="stateLine"></div>
+</div>
+
+<h2>What changed, and why</h2>
+<ul class="callouts">
+  <li><b>Ambiguous values qualify themselves.</b> A label only has to name its dimension when its value doesn't. <code>Opus 5</code>, <code>High</code> and <code>web-search-agent</code> stand alone; the moment two controls would both read <code>Default</code>, they become <code>Model: Default</code> and <code>Agent: Default</code>. The rule is computed from live state, not hardcoded, so it costs no width in the common case.</li>
+  <li><b>Agent outranks model.</b> Which agent is answering changes its instructions and tools — a larger behavioural change than swapping model tiers. It is the last thing to retreat into overflow, not, as today, the item sitting furthest right in source order.</li>
+  <li><b>The context meter is never hideable, and it is labelled.</b> Reserved slot beside send at every width. It is the one element here that is <em>read</em> continuously rather than <em>set</em> occasionally, and a bare ring makes you hover to learn anything.</li>
+  <li><b>It escalates.</b> Muted below 75%, amber past 75%, red past 90%, with the token count appearing inline in the red. A ring that looks the same at 13% and 97% isn't doing the job a limit indicator exists to do.</li>
+  <li><b>Collapse the run settings.</b> <code>Auto</code>, <code>Default (recommended)</code> and <code>High</code> are one concept — mode, model, reasoning effort. One chip, one popover, when space is tight.</li>
+  <li><b>Drop the qualifier from the trigger.</b> <code>Default (recommended)</code> is a ~200&nbsp;px label for a one-word value. "(recommended)" belongs in the dropdown list — where it is here.</li>
+  <li><b>Pin the primary action.</b> Send is last in source order today, so it is the first thing stranded by wrapping. A fixed right-aligned slot matches every other chat UI.</li>
+  <li><b>Overflow, not wrap.</b> Every setting stays reachable at the 300&nbsp;px panel floor via <code>⋯</code>; chrome is capped at one row at any width. The narrowest tier — agent alone — is retained as a safety net for long agent names such as <code>web-search-agent</code>, which can exceed the budget at 300&nbsp;px even though the shorter <code>Default</code> fits.</li>
+</ul>
+
+<script>
+(() => {
+  const LIMIT = 1_000_000;
+  const state = { agent:'Default', mode:'Auto', model:'Default', effort:'High', fast:false, ctx:13, fav:{} };
+
+  const SETTINGS = {
+    agent:  { title:'Agent',  values:['Default','web-search-agent'], star:true,
+              desc:{ 'Default':'The standard agent for this thread.',
+                     'web-search-agent':'Research on the internet. Biased toward primary sources, with tiered citations for each claim.' } },
+    mode:   { title:'Mode',   values:['Auto','Plan','Ask'] },
+    model:  { title:'Model',  values:['Default','Opus 5','Sonnet 5','Haiku 4.5'], note:{'Default':'recommended'} },
+    effort: { title:'Effort', values:['High','Medium','Low'] },
+    fast:   { title:'Fast mode', toggle:true },
+  };
+  // priority, highest first
+  const ORDER = ['agent','mode','model','effort','fast'];
+
+  const TIERS = [
+    { id:4, items:[{k:'agent'},{k:'mode'},{k:'model'},{k:'effort'},{k:'fast'}] },
+    { id:3, items:[{k:'agent'},{k:'mode'},{k:'model'},{k:'effort'}] },
+    { id:2, items:[{k:'agent'},{chip:['mode','model','effort']}] },
+    { id:1, items:[{k:'agent'},{chip:['mode']}] },
+    { id:0, items:[{chip:['agent']}] },
+  ];
+  const coversOf = t => t.items.flatMap(i => i.k ? [i.k] : i.chip);
+
+  const el=(t,c,x)=>{const n=document.createElement(t); if(c)n.className=c; if(x!=null)n.textContent=x; return n;};
+  const fmt=n=> n>=1000 ? (n/1000).toFixed(n>=10000?0:1).replace(/\.0$/,'')+'k' : String(n);
+  const tokens=()=>Math.round(state.ctx/100*LIMIT);
+  const cost=()=>(state.ctx*0.359).toFixed(2);
+  const level=()=> state.ctx>=90?'crit' : state.ctx>=75?'warn' : '';
+
+  // A label names its dimension only when its value is shared with another control.
+  function ambiguous(k){
+    const v = state[k];
+    return ORDER.some(o => o!==k && !SETTINGS[o].toggle && state[o]===v);
+  }
+
+  function ring(size){
+    const r=(size-3)/2, C=2*Math.PI*r;
+    const col = level()==='crit'?'var(--bad)' : level()==='warn'?'var(--warn)' : 'var(--muted)';
+    const s=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    s.setAttribute('width',size); s.setAttribute('height',size); s.setAttribute('viewBox',`0 0 ${size} ${size}`);
+    s.innerHTML=`<circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#3a3d43" stroke-width="2"/>`+
+      `<circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round"
+        stroke-dasharray="${C}" stroke-dashoffset="${C*(1-state.ctx/100)}" transform="rotate(-90 ${size/2} ${size/2})"/>`;
+    return s;
+  }
+
+  function meterEl(withLabel){
+    const host=el('span','pop-host meter-host'), m=el('span','meter '+level());
+    m.append(ring(15));
+    if(withLabel){
+      m.append(el('span','pct', state.ctx+'%'));
+      if(level()==='crit') m.append(el('span','pct', fmt(tokens())+'/'+fmt(LIMIT)));
+    }
+    const pop=el('div','pop hoverpop right');
+    pop.append(el('div','pop-sec','Context'));
+    const r1=el('div','pop-read', state.ctx+'%');
+    const sm=el('small'); sm.textContent=`${fmt(tokens())} / ${fmt(LIMIT)}`; r1.append(sm);
+    pop.append(r1, el('div','pop-sep'), el('div','pop-sec','Cost'), el('div','pop-read', cost()+' USD'));
+    host.append(m,pop);
+    return host;
+  }
+
+  function buildBar(mount){
+    const bar=el('div','bar-new');
+    const left=el('div','fixed-left');
+    const plus=el('button','icon','+'); plus.title='Attach file';
+    const at=el('button','icon','⊕'); at.title='Add context';
+    left.append(plus,at);
+    const zone=el('div','zone');
+    const right=el('div','fixed-right');
+    const meterSlot=el('span');
+    const moreHost=el('span','pop-host');
+    const moreBtn=el('button','icon','⋯'); moreBtn.title='More options';
+    const pop=el('div','pop right'); moreHost.append(moreBtn,pop);
+    const send=el('button','send','➤'); send.title='Send';
+    right.append(meterSlot,moreHost,send);
+    bar.append(left,zone,right); mount.append(bar);
+    const ctx={bar,left,zone,right,meterSlot,moreBtn,send,pop,tiers:new Map(),pops:[]};
+    buildTiers(ctx); allBars.push(ctx); return ctx;
+  }
+
+  function buildTiers(ctx){
+    TIERS.forEach(t=>{
+      const node=el('div','tier');
+      t.items.forEach(item=>{
+        if(item.k==='fast'){
+          const wrap=el('span','ctl');
+          wrap.append(document.createTextNode('Fast mode '));
+          const sw=el('span','sw'); sw.dataset.role='fast'; wrap.append(sw);
+          wrap.onclick=e=>{e.stopPropagation(); state.fast=!state.fast; closeAll(); refitAll();};
+          node.append(wrap); return;
+        }
+        const host=el('span','pop-host');
+        const btn=el('button', item.k ? 'ctl' : 'chip');
+        const pop=el('div','pop');
+        host.append(btn,pop); node.append(host);
+        const keys = item.k ? [item.k] : item.chip;
+        ctx.pops.push({btn,pop,keys,chip:!item.k});
+        btn.onclick=e=>{
+          e.stopPropagation();
+          const open=pop.classList.contains('open'); closeAll();
+          if(!open){ pop.innerHTML=''; optionRows(pop,keys); pop.classList.add('open'); }
+        };
+      });
+      ctx.zone.append(node); ctx.tiers.set(t.id,node);
+    });
+  }
+
+  function renderLabels(ctx){
+    ctx.pops.forEach(p=>{
+      p.btn.innerHTML='';
+      p.keys.forEach((k,i)=>{
+        if(i) p.btn.append(el('span','dot','·'));
+        if(ambiguous(k)){
+          p.btn.append(el('span','qual', SETTINGS[k].title+': '));
+        }
+        p.btn.append(document.createTextNode(state[k]+' '));
+      });
+      p.btn.append(el('span','chev','▾'));
+    });
+    ctx.zone.querySelectorAll('.sw[data-role=fast]').forEach(s=>s.classList.toggle('on',state.fast));
+  }
+
+  function fit(ctx){
+    renderLabels(ctx);
+    for(const withLabel of [true,false]){
+      ctx.meterSlot.innerHTML=''; ctx.meterSlot.append(meterEl(withLabel));
+      const avail = ctx.bar.clientWidth - ctx.left.offsetWidth - ctx.right.offsetWidth - 8;
+      let chosen=null;
+      for(const t of TIERS){
+        const n=ctx.tiers.get(t.id);
+        const was=n.classList.contains('active'); n.classList.remove('active');
+        const w=n.scrollWidth; if(was)n.classList.add('active');
+        if(w<=avail){chosen=t;break;}
+      }
+      if(chosen || !withLabel){
+        ctx.tiers.forEach(n=>n.classList.remove('active'));
+        if(chosen) ctx.tiers.get(chosen.id).classList.add('active');
+        ctx.covered = chosen?coversOf(chosen):[];
+        ctx.meterLabelled = withLabel;
+        break;
+      }
+    }
+    buildMenu(ctx);
+  }
+
+  function optionRows(pop,keys){
+    keys.forEach((k,i)=>{
+      if(i) pop.append(el('div','pop-sep'));
+      const spec=SETTINGS[k];
+      pop.append(el('div','pop-sec',spec.title));
+      if(spec.toggle){
+        const b=el('button','pop-item');
+        b.append(el('span','tick', state.fast?'✓':''));
+        const body=el('span','body'); body.append(document.createTextNode('Fast mode')); b.append(body);
+        const sw=el('span','sw sp'); sw.classList.toggle('on',state.fast); b.append(sw);
+        b.onclick=()=>{state.fast=!state.fast; closeAll(); refitAll();};
+        pop.append(b); return;
+      }
+      spec.values.forEach(v=>{
+        const b=el('button','pop-item'+(state[k]===v?' sel':''));
+        b.append(el('span','tick', state[k]===v?'✓':''));
+        const body=el('span','body');
+        body.append(document.createTextNode(v));
+        if(spec.note&&spec.note[v]){
+          const n=el('span'); n.textContent=' — '+spec.note[v];
+          n.style.fontSize='11px'; n.style.color='var(--dim)'; body.append(n);
+        }
+        if(spec.desc&&spec.desc[v]) body.append(el('span','desc',spec.desc[v]));
+        b.append(body);
+        if(spec.star){
+          const st=el('span','star sp'+(state.fav[v]?' on':''), state.fav[v]?'★':'☆');
+          st.onclick=e=>{e.stopPropagation(); state.fav[v]=!state.fav[v]; b.replaceChild(
+            el('span','star sp'+(state.fav[v]?' on':''), state.fav[v]?'★':'☆'), st);};
+          b.append(st);
+        }
+        b.onclick=()=>{state[k]=v; closeAll(); refitAll();};
+        pop.append(b);
+      });
+    });
+  }
+
+  function buildMenu(ctx){
+    ctx.pop.innerHTML='';
+    const hidden=ORDER.filter(k=>!ctx.covered.includes(k));
+    if(!hidden.length) ctx.pop.append(el('div','pop-empty','All settings are shown in the bar.'));
+    else optionRows(ctx.pop,hidden);
+    ctx.moreBtn.title = hidden.length?`More options (${hidden.length} hidden)`:'More options';
+  }
+
+  const allBars=[];
+  function closeAll(){ document.querySelectorAll('.pop.open').forEach(p=>p.classList.remove('open')); }
+  document.addEventListener('click',closeAll);
+
+  const A=buildBar(document.getElementById('mountA'));
+  const B=buildBar(document.getElementById('mountB'));
+  // rebuild menus after construction so click handlers exist
+  allBars.forEach(ctx=>{
+    ctx.moreBtn.onclick=e=>{e.stopPropagation(); const o=ctx.pop.classList.contains('open'); closeAll(); if(!o)ctx.pop.classList.add('open');};
+  });
+
+  function refitAll(){
+    allBars.forEach(fit);
+    const rn=document.getElementById('ringNow'); rn.innerHTML=''; rn.append(ring(15));
+    const hidden=ORDER.filter(k=>!B.covered.includes(k));
+    const amb=ORDER.filter(k=>!SETTINGS[k].toggle&&ambiguous(k));
+    document.getElementById('stateLine').innerHTML=
+      `<b>agent</b> ${state.agent} · <b>mode</b> ${state.mode} · <b>model</b> ${state.model} · <b>effort</b> ${state.effort} · <b>fast</b> ${state.fast?'on':'off'}<br>`+
+      `<b>context</b> ${state.ctx}% (${fmt(tokens())}/${fmt(LIMIT)}) — ${cost()} USD · meter ${B.meterLabelled?'labelled':'ring only'} · level ${level()||'normal'}<br>`+
+      `<b>qualified labels</b> ${amb.length?amb.join(', ')+' (value clash)':'— none, all values unique'}<br>`+
+      `<b>in overflow menu</b> ${hidden.length?hidden.join(', '):'— none, all controls fit'}`;
+  }
+
+  const w=document.getElementById('w'), rs=document.getElementById('rs'), wv=document.getElementById('wv');
+  w.addEventListener('input',()=>{rs.style.width=w.value+'px'; wv.textContent=w.value+'px'; refitAll();});
+  const c=document.getElementById('c'), cv=document.getElementById('cv');
+  c.addEventListener('input',()=>{state.ctx=+c.value; cv.textContent=c.value+'%'; refitAll();});
+
+  new ResizeObserver(refitAll).observe(rs);
+  refitAll();
+})();
+</script>
+</body>
+</html>
