@@ -244,7 +244,9 @@
   const coversOf = t => t.items.flatMap(i => i.k ? [i.k] : i.chip);
 
   const el=(t,c,x)=>{const n=document.createElement(t); if(c)n.className=c; if(x!=null)n.textContent=x; return n;};
-  const fmt=n=> n>=1000 ? (n/1000).toFixed(n>=10000?0:1).replace(/\.0$/,'')+'k' : String(n);
+  const fmt=n=> n>=1e6 ? (n/1e6).toFixed(n%1e6?1:0).replace(/\.0$/,'')+'M'
+              : n>=1e3 ? (n/1e3).toFixed(n>=1e4?0:1).replace(/\.0$/,'')+'k'
+              : String(n);
   const tokens=()=>Math.round(state.ctx/100*LIMIT);
   const cost=()=>(state.ctx*0.359).toFixed(2);
   const level=()=> state.ctx>=90?'crit' : state.ctx>=75?'warn' : '';
